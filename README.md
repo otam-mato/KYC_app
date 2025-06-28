@@ -13,7 +13,7 @@ End‑to‑end Know‑Your‑Customer (KYC) flow built on **AWS Lambda, SQS, Tex
 
 * Live architecture and data‑flow diagrams (Mermaid)
 * A step‑by‑step processing table with example payloads
-* Patch SQL to bring the schema in line with the flow
+* Patch SQL to bring the schema up
 
 ---
 
@@ -364,7 +364,7 @@ erDiagram
 ### Running Locally
 
 ```bash
-psql $DB_URL -f "Kyc Schema Patch.sql"
+psql $DB_URL -f "Kyc_Schema_Patch.sql"
 ```
 
 ---
