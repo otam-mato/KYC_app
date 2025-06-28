@@ -134,8 +134,115 @@ graph TD
 ## 2  Detailed Flow Diagram (with AI round‑trips & fan‑in queue)
 
 ```mermaid
-%%  KYC flow – full round‑trip AI calls + clarified SNS name
-<REPLACE_WITH_FINAL_FLOW_DIAGRAM_CODE>
+%%  KYC flow – full round-trip AI calls + clarified SNS name
+graph TD
+    %% ─────────── Sources & Triggers ───────────
+    USER_UPLOAD[User uploads<br/>ID + selfie]
+    FOLDER[(On-prem images<br/>folder on MS SQL server)]
+    DATASYNC[AWS DataSync<br/>agent]
+    S3[(S3 bucket<br/>kyc-raw/...)]
+    APIFY[Apify<br/>register scraper]
+    CRON[Weekly<br/>expiry scheduler]
+    CSUI[CS Manual<br/>Review UI]
+
+    %% ─────────── AI services ───────────
+    Textract[(Amazon Textract)]
+    Rekog[(Amazon Rekognition)]
+
+    %% ─────────── Lambda workers ───────────
+    DOC[doc_scan_lambda]
+    FACE[face_match_lambda]
+    REG[reg_check_lambda]
+    REQ[reg_request_lambda]
+    DEC[decision_lambda]
+    REM[expiry_reminder_lambda]
+
+    %% ─────────── Queues / Topics ───────────
+    Q_FACE[face-match SQS]
+    Q_REQ[reg-request SQS]
+    Q_RESP[reg-check-ingest SQS]
+    Q_DEC[decision SQS]
+
+    CSMAIL[Email to CS]
+    NOTIFY_SNS[SNS / Webhook<br/>to product]
+
+    %% ─────────── RDS (table-level) ───────────
+    subgraph DB[Relational DB]
+        USERS[(users)]
+        IDDOC[(id_documents)]
+        SCANS[(doc_scans)]
+        SELFIES[(selfies)]
+        FACES[(face_checks)]
+        REGCHK[(reg_checks)]
+        KYC[(kyc_decisions)]
+    end
+
+    %% ───── 0  User upload → local folder → S3
+    USER_UPLOAD -- "Write files" --> FOLDER
+    FOLDER -->|DataSync job| DATASYNC
+    DATASYNC -->|PUT objects| S3
+    S3 -- ObjectCreated --> DOC
+
+    %% ───── 1  doc_scan_lambda
+    DOC -- "INSERT doc_scans"  --> SCANS
+    DOC -- "INSERT selfies"    --> SELFIES
+    DOC -- "UPDATE id_documents" --> IDDOC
+    DOC -- "msg: user_id"               --> Q_FACE
+    DOC -- "msg: reg_type + reg_no"     --> Q_REQ
+
+    %% ───── AI service calls (outbound & return)
+    DOC -. "OCR" .-> Textract
+    Textract -. "JSON result" .-> DOC
+
+    FACE -. "Compare & liveness" .-> Rekog
+    Rekog -. "JSON result" .-> FACE
+
+    %% ───── 2  face_match_lambda
+    Q_FACE --> FACE
+    FACE -- "INSERT face_checks" --> FACES
+    %% (fan-in) FACE → decision queue
+    FACE -->|msg: user_id| Q_DEC
+
+    %% ───── 3  Apify request / response
+    Q_REQ --> REQ
+    REQ -- "HTTP request<br/>(reg_type, reg_no, user_id)" --> APIFY
+    APIFY -- "JSON {user_id …}" --> Q_RESP
+
+    %% ───── 3a  reg_check_lambda
+    Q_RESP --> REG
+    REG -- "INSERT reg_checks" --> REGCHK
+    %% (fan-in) REG → decision queue (label offset for clarity)
+    REG -. "msg: user_id" .-> Q_DEC
+
+    %% ───── 4  decision_lambda
+    Q_DEC --> DEC
+    DEC -- "INSERT kyc_decisions" --> KYC
+    DEC -- "UPDATE users"         --> USERS
+    DEC -- PASS           --> NOTIFY_SNS
+    DEC -- MANUAL_REVIEW  --> CSMAIL
+
+    %% ───── 5  CS manual review
+    CSUI -- "Approve / Reject" --> KYC
+
+    %% ───── 6  Expiry reminder
+    CRON --> REM
+    REM -- "SELECT expiry then send<br/>90/30/7-day emails" --> NOTIFY_SNS
+
+    %% ─────────── Styling ───────────
+    classDef lambda fill:#004b76,stroke:#fff,color:#fff;
+    class DOC,FACE,REG,REQ,DEC,REM lambda;
+
+    classDef queue fill:#c0d4e4,stroke:#004b76,color:#000;
+    class Q_FACE,Q_REQ,Q_RESP,Q_DEC queue;
+
+    classDef source fill:#fff4ce,stroke:#c09,stroke-width:1px,color:#000;
+    class USER_UPLOAD,FOLDER,DATASYNC,APIFY,CRON,CSUI,CSMAIL,NOTIFY_SNS source;
+
+    classDef ai fill:#7a5fd0,stroke:#fff,color:#fff;
+    class Textract,Rekog ai;
+
+    classDef db fill:#f8f8f8,stroke:#555,color:#000;
+
 ```
 
 *The `<REPLACE_WITH_FINAL_FLOW_DIAGRAM_CODE>` placeholder is replaced in the actual file with the full Mermaid code from the latest flow diagram (kept identical to* **kyc\_flow\_docs.md** *to avoid drift).*
