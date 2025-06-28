@@ -1,5 +1,14 @@
 # KYC Platform
 
+![PostgreSQL](https://img.shields.io/badge/db-PostgreSQL-blue)
+![AWS Lambda](https://img.shields.io/badge/runtime-AWS_Lambda-orange)
+![Textract](https://img.shields.io/badge/AWS-Textract-purple)
+![Rekognition](https://img.shields.io/badge/AWS-Rekognition-purple)
+![SQS](https://img.shields.io/badge/messaging-SQS-green)
+![Apify](https://img.shields.io/badge/external-Apify-black)
+
+
+
 End‑to‑end Know‑Your‑Customer (KYC) flow built on **AWS Lambda, SQS, Textract, Rekognition, RDS (PostgreSQL)** and **Apify**.  This repository contains:
 
 * Live architecture and data‑flow diagrams (Mermaid)
