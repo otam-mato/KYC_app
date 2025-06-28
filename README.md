@@ -11,7 +11,7 @@
 
 End‑to‑end Know‑Your‑Customer (KYC) flow built on **AWS Lambda, SQS, Textract, Rekognition, RDS (PostgreSQL)** and **Apify**.  This repository contains:
 
-* Live architecture and data‑flow diagrams (Mermaid)
+* Live architecture and data‑flow diagrams
 * A step‑by‑step processing table with example payloads
 * Patch SQL to bring the schema up
 
