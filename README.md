@@ -271,80 +271,85 @@ graph TD
 
 ```mermaid
 erDiagram
-  users {
-    BIGSERIAL id PK
-    VARCHAR email
-    VARCHAR reg_no
-    reg_type_enum reg_type
-    user_status_enum status
-    TIMESTAMPTZ created_at
-  }
+    %% direction LR   %% ← Uncomment if your renderer supports L-to-R layout
 
-  id_documents {
-    BIGSERIAL id PK
-    BIGINT user_id FK
-    TEXT s3_key_original
-    VARCHAR doc_type
-    id_doc_status_enum status
-    DATE expiry_date
-    TIMESTAMPTZ created_at
-  }
+    users {
+        BIGSERIAL        id PK
+        VARCHAR(254)     email
+        VARCHAR(50)      reg_no
+        reg_type_enum    reg_type
+        user_status_enum status
+        TIMESTAMPTZ      created_at
+    }
 
-  selfies {
-    BIGSERIAL id PK
-    BIGINT user_id FK
-    TEXT s3_key
-    TIMESTAMPTZ created_at
-  }
+    id_documents {
+        BIGSERIAL         id PK
+        BIGINT            user_id FK
+        TEXT              s3_key_original
+        VARCHAR(40)       doc_type
+        id_doc_status_enum status
+        DATE              expiry_date
+        TIMESTAMPTZ       created_at
+    }
 
-  doc_scans {
-    BIGSERIAL id PK
-    BIGINT id_document_id FK
-    JSONB textract_json
-    TEXT parsed_name
-    DATE parsed_dob
-    DATE parsed_expiry
-    VARCHAR parser_version
-    TIMESTAMPTZ completed_at
-  }
+    selfies {
+        BIGSERIAL      id PK
+        BIGINT         user_id FK
+        TEXT           s3_key
+        TIMESTAMPTZ    created_at
+    }
 
-  face_checks {
-    BIGSERIAL id PK
-    BIGINT user_id FK
-    BIGINT selfie_id FK
-    BIGINT id_document_id FK
-    NUMERIC match_score
-    BOOLEAN liveness_pass
-    VARCHAR rekognition_job_id
-    TIMESTAMPTZ completed_at
-  }
+    doc_scans {
+        BIGSERIAL      id PK
+        BIGINT         id_document_id FK
+        JSONB          textract_json
+        TEXT           parsed_name
+        DATE           parsed_dob
+        DATE           parsed_expiry
+        VARCHAR(40)    parser_version
+        TIMESTAMPTZ    completed_at
+    }
 
-  reg_checks {
-    BIGSERIAL id PK
-    BIGINT user_id FK
-    DATE snapshot_date
-    BOOLEAN matched_name
-    BOOLEAN matched_status
-    JSONB raw_response_json
-    TIMESTAMPTZ checked_at
-  }
+    face_checks {
+        BIGSERIAL      id PK
+        BIGINT         user_id FK
+        BIGINT         selfie_id FK
+        BIGINT         id_document_id FK
+        NUMERIC        match_score
+        BOOLEAN        liveness_pass
+        VARCHAR(100)   rekognition_job_id
+        TIMESTAMPTZ    completed_at
+    }
 
-  kyc_decisions {
-    BIGSERIAL id PK
-    BIGINT user_id FK
-    kyc_decision_enum decision
-    TEXT[] reasons
-    TIMESTAMPTZ decided_at
-  }
+    reg_checks {
+        BIGSERIAL      id PK
+        BIGINT         user_id FK
+        DATE           snapshot_date
+        BOOLEAN        matched_name
+        BOOLEAN        matched_status
+        JSONB          raw_response_json
+        TIMESTAMPTZ    checked_at
+    }
 
-  users ||--o{ id_documents
-  users ||--o{ selfies
-  users ||--o{ face_checks
-  users ||--o{ reg_checks
-  users ||--o{ kyc_decisions
-  id_documents ||--o{ doc_scans
-  id_documents ||--o{ face_checks
-  selfies ||--o{ face_checks
+    kyc_decisions {
+        BIGSERIAL        id PK
+        BIGINT           user_id FK
+        kyc_decision_enum decision
+        TEXT[]           reasons
+        TIMESTAMPTZ      decided_at
+    }
+
+    %% ─────── Relationships (each FK exactly once) ───────
+    users        ||--o{ id_documents  : "users.id → id_documents.user_id"
+    users        ||--o{ selfies       : "users.id → selfies.user_id"
+    users        ||--o{ face_checks   : "users.id → face_checks.user_id"
+    users        ||--o{ reg_checks    : "users.id → reg_checks.user_id"
+    users        ||--o{ kyc_decisions : "users.id → kyc_decisions.user_id"
+
+    id_documents ||--o{ doc_scans     : "id_documents.id → doc_scans.id_document_id"
+    id_documents ||--o{ face_checks   : "id_documents.id → face_checks.id_document_id"
+
+    selfies      ||--o{ face_checks   : "selfies.id → face_checks.selfie_id"
 ```
 
 ---
