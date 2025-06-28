@@ -6,8 +6,6 @@ End‑to‑end Know‑Your‑Customer (KYC) flow built on **AWS Lambda, SQS, Tex
 * A step‑by‑step processing table with example payloads
 * Patch SQL to bring the schema in line with the flow
 
-> GitHub renders Mermaid automatically – just open this README and the graphs will paint themselves.
-
 ---
 
 ## 📑 Quick Links
