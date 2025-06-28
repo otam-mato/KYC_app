@@ -140,7 +140,7 @@ graph TD
 
 ---
 
-## 2  Detailed Flow Diagram (with AI round‑trips & fan‑in queue)
+## 2  Detailed Flow Diagram
 
 ```mermaid
 %%  KYC flow – full round-trip AI calls + clarified SNS name
