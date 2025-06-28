@@ -244,15 +244,14 @@ graph TD
     classDef db fill:#f8f8f8,stroke:#555,color:#000;
 
 ```
-
-*The `<REPLACE_WITH_FINAL_FLOW_DIAGRAM_CODE>` placeholder is replaced in the actual file with the full Mermaid code from the latest flow diagram (kept identical to* **kyc\_flow\_docs.md** *to avoid drift).*
-
 ---
 
 ## 3  Entity‑Relationship Diagram
 
 ```mermaid
 erDiagram
+    %% direction LR   %% ← Uncomment if your renderer supports L-to-R layout
+
     users {
         BIGSERIAL        id PK
         VARCHAR(254)     email
@@ -319,14 +318,17 @@ erDiagram
         TIMESTAMPTZ      decided_at
     }
 
-    users        ||--o{ id_documents
-    users        ||--o{ selfies
-    users        ||--o{ face_checks
-    users        ||--o{ reg_checks
-    users        ||--o{ kyc_decisions
-    id_documents ||--o{ doc_scans
-    id_documents ||--o{ face_checks
-    selfies      ||--o{ face_checks
+    %% ─────── Relationships (each FK exactly once) ───────
+    users        ||--o{ id_documents  : "users.id → id_documents.user_id"
+    users        ||--o{ selfies       : "users.id → selfies.user_id"
+    users        ||--o{ face_checks   : "users.id → face_checks.user_id"
+    users        ||--o{ reg_checks    : "users.id → reg_checks.user_id"
+    users        ||--o{ kyc_decisions : "users.id → kyc_decisions.user_id"
+
+    id_documents ||--o{ doc_scans     : "id_documents.id → doc_scans.id_document_id"
+    id_documents ||--o{ face_checks   : "id_documents.id → face_checks.id_document_id"
+
+    selfies      ||--o{ face_checks   : "selfies.id → face_checks.selfie_id"
 ```
 
 ---
