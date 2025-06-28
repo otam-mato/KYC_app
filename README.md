@@ -22,54 +22,111 @@ End‑to‑end Know‑Your‑Customer (KYC) flow built on **AWS Lambda, SQS, Tex
 ## 1  High‑Level Component Diagram
 
 ```mermaid
-%%  KYC platform – component diagram (simplified)
+%%  KYC platform – component diagram 
 graph TD
-  subgraph "External Actors"
-    User["User / Browser"]
-    CSUI["CS Review UI"]
-  end
 
-  subgraph "KYC Platform (AWS account)"
-    S3[(S3: kyc-raw/...)]
-    FaceQ[[face-match SQS]]
-    RegReqQ[[reg-request SQS]]
-    RegRespQ[[reg-check-ingest SQS]]
-    DecQ[[decision SQS]]
+    %% ─────────  EXTERNAL ACTORS  ─────────
+    subgraph "External Actors"
+        User["User / Browser"]
+        CSUI["CS Review UI"]
+    end
 
-    DocScan[doc_scan_lambda]
-    ReqMaker[reg_request_lambda]
-    FaceMatch[face_match_lambda]
-    RegCheck[reg_check_lambda]
-    Decision[decision_lambda]
-    Expiry[expiry_reminder_lambda]
+    %% ─────────  AWS KYC PLATFORM  ───────
+    subgraph "KYC Platform (AWS account)"
+        direction TB
 
-    DB[(RDS PostgreSQL)]
-  end
+        S3[(S3 Bucket<br/>kyc-raw/…)]:::store
 
-  subgraph "SQL02 On‑prem"
-    OnPrem[onprem_upload_service]
-    DataSync[AWS DataSync Agent]
-  end
+        FaceQ[[face-match SQS]]:::queue
+        RegReqQ[[reg-request SQS]]:::queue
+        RegRespQ[[reg-check-ingest SQS]]:::queue
+        DecQ[[decision SQS]]:::queue
 
-  subgraph "Registers / Apify"
-    ApifyGMC["GMC Scraper"]
-  end
+        DocScan[[doc_scan_lambda]]:::lambda
+        ReqMaker[[reg_request_lambda]]:::lambda
+        FaceMatch[[face_match_lambda]]:::lambda
+        RegCheck[[reg_check_lambda]]:::lambda
+        Decision[[decision_lambda]]:::lambda
+        Expiry[[expiry_reminder_lambda]]:::lambda
 
-  subgraph "AWS AI"
-    Textract[(Textract)]
-    Rekog[(Rekognition)]
-  end
+        DB[(RDS PostgreSQL)]:::store
+    end
 
-  User --> OnPrem --> DataSync --> S3
-  S3 --> DocScan
-  DocScan -.-> Textract -.-> DocScan
-  DocScan --> FaceQ & RegReqQ
-  FaceQ --> FaceMatch -.-> Rekog -.-> FaceMatch --> DecQ
-  RegReqQ --> ReqMaker --> ApifyGMC --> RegRespQ --> RegCheck --> DecQ
-  DecQ --> Decision --> DB
+    %% ─────────  SQL02 ON-PREM / EDGE  ─────────
+    subgraph "SQL02 On-prem"
+        OnPremSvc["onprem_upload_service"]:::lambda
+        DataSyncAgent["AWS DataSync Agent"]:::source
+    end
 
-  classDef lambda fill:#004b76,stroke:#fff,color:#fff;
-  class DocScan,ReqMaker,FaceMatch,RegCheck,Decision,Expiry lambda;
+    %% ─────────  REGISTERS / APIFY  ───────
+    subgraph APIFY_BOX["Registers / Apify scrapers"]
+        direction LR
+        ApifyGDC["GDC Register Scraper"]
+        ApifyNMC["NMC Register Scraper"]
+        ApifyGMC["GMC Register Scraper"]
+        ApifyGPC["GPC Register Scraper"]
+    end
+
+    %% ─────────  AWS AI SERVICES  ─────────
+    subgraph "AWS AI services"
+        direction TB
+        Textract[(Amazon Textract)]:::ai
+        Rekog[(Amazon Rekognition)]:::ai
+    end
+
+    %% ─────────  NOTIFICATION  ───────────
+    subgraph "Notifications"
+        NotifySNS["SNS / Webhook"]
+        NotifyEmail["Email to CS"]
+    end
+
+    %% ─────────  FLOWS ─────────
+    User -->|"PUT ID & selfie"| OnPremSvc
+    OnPremSvc -- "copy files" --> DataSyncAgent
+    DataSyncAgent -->|"PUT objects"| S3
+
+    S3 -- "ObjectCreated" --> DocScan
+    DocScan -- "invoke OCR"       --> Textract
+    Textract -- "JSON result"     --> DocScan
+    DocScan -- "rows to DB"       --> DB
+    DocScan -- "msg user_id"      --> FaceQ
+    DocScan -- "msg reg_no/type"  --> RegReqQ
+
+    FaceQ --> FaceMatch
+    FaceMatch -- "invoke compare/liveness" --> Rekog
+    Rekog -- "JSON result"                 --> FaceMatch
+    FaceMatch -- "row face_checks"         --> DB
+    FaceMatch -- "msg user_id"             --> DecQ
+
+    RegReqQ --> ReqMaker
+    ReqMaker -- "HTTP POST"      --> APIFY_BOX
+    APIFY_BOX -- "JSON response" --> RegRespQ
+
+    RegRespQ --> RegCheck
+    RegCheck -- "row reg_checks" --> DB
+    RegCheck -- "msg user_id"    --> DecQ
+
+    DecQ --> Decision
+    Decision -- "insert kyc_decisions⏎update users" --> DB
+    Decision -- "PASS"          --> NotifySNS
+    Decision -- "MANUAL_REVIEW" --> NotifyEmail
+
+    Expiry -- "select expiring IDs" --> DB
+    Expiry -- "90/30/7-day emails"  --> NotifyEmail
+    Expiry -- "force re-upload"     --> User
+
+    %% ─────────  STYLING  ─────────
+    classDef lambda fill:#004B76,stroke:#fff,color:#fff;
+    classDef queue  fill:#C0D4E4,stroke:#004B76,color:#000;
+    classDef store  fill:#F8F8F8,stroke:#555,color:#000;
+    classDef source fill:#FFF4CE,stroke:#C09,color:#000;
+    classDef ai     fill:#7A5FD0,stroke:#fff,color:#fff;
+
+    class OnPremSvc,DocScan,ReqMaker,FaceMatch,RegCheck,Decision,Expiry lambda;
+    class FaceQ,RegReqQ,RegRespQ,DecQ queue;
+    class S3,DB store;
+    class DataSyncAgent source;
+    class Textract,Rekog ai;
 ```
 
 ---
