@@ -1,5 +1,3 @@
-# KYC_app
-
 # KYC Platform
 
 End‑to‑end Know‑Your‑Customer (KYC) flow built on **AWS Lambda, SQS, Textract, Rekognition, RDS (PostgreSQL)** and **Apify**.  This repository contains:
