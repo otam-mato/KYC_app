@@ -335,7 +335,7 @@ erDiagram
 
 ### Running Locally
 
-1. Clone this repo and open `README.md` – GitHub will render all Mermaid diagrams.
+1. Clone this repo and open `README.md`
 2. Apply database migration:
 
 ```bash
