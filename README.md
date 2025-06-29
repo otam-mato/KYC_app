@@ -21,8 +21,8 @@ End‑to‑end Know‑Your‑Customer (KYC) flow built on **AWS Lambda, SQS, Tex
 
 | Artifact                          | File                                                 |
 | --------------------------------- | ---------------------------------------------------- |
-| Placeholder for some more docs | [`kyc_flow_docs.md`](./kyc_flow_docs.md)             |
-| Schema patch SQL                  | [`Kyc Schema Patch.sql`](./Kyc_Schema_Patch.sql) |
+| AWS CloudFormation template | [`infrastructure.yml`](./infrastructure.yml)             |
+| Schema patch SQL                  | [`Kyc_Schema_Patch.sql`](./Kyc_Schema_Patch.sql) |
 
 ---
 
