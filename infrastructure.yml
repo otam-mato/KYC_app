@@ -1,0 +1,327 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  CloudFormation stack for the server‑less KYC platform (S3, SQS, Lambda, RDS,
+  SNS).  Lambdas are wired to queues / events and granted the minimal set of
+  IAM permissions required for the reference architecture.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC where Lambdas and RDS will run
+
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private subnets (comma‑separated) for Lambdas & RDS
+
+  DbUsername:
+    Type: String
+    Default: kyc_admin
+    NoEcho: true
+
+  DbPassword:
+    Type: String
+    NoEcho: true
+
+Resources:
+  ## ────────── Networking & DB ──────────
+  RdsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow Lambda → Postgres
+      VpcId: !Ref VpcId
+
+  KycDbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnets for KYC Postgres
+      SubnetIds: !Ref PrivateSubnetIds
+
+  KycDbInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      Engine: postgres
+      EngineVersion: "15.4"
+      DBInstanceClass: db.t3.medium
+      AllocatedStorage: 20
+      MasterUsername: !Ref DbUsername
+      MasterUserPassword: !Ref DbPassword
+      VPCSecurityGroups:
+        - !Ref RdsSecurityGroup
+      DBSubnetGroupName: !Ref KycDbSubnetGroup
+      PubliclyAccessible: false
+
+  ## ────────── Core Messaging ──────────
+  FaceMatchQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: face-match
+
+  RegRequestQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: reg-request
+
+  RegCheckIngestQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: reg-check-ingest
+
+  DecisionQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: decision
+
+  ## ────────── Storage & Notifications ──────────
+  KycRawBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "kyc-raw-${AWS::AccountId}-${AWS::Region}"
+      NotificationConfiguration:   # will be updated by LambdaPermissionForS3 below
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Function: !GetAtt DocScanFunction.Arn
+
+  NotifyTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: kyc-notify
+
+  ## ────────── IAM Role ──────────
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: kyc-lambda-exec
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: kyc-inline
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # S3
+              - Effect: Allow
+                Action: ["s3:GetObject", "s3:PutObject"]
+                Resource: !Sub "${KycRawBucket.Arn}/*"
+              # SQS send/receive
+              - Effect: Allow
+                Action: ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes"]
+                Resource:
+                  - !GetAtt FaceMatchQueue.Arn
+                  - !GetAtt RegRequestQueue.Arn
+                  - !GetAtt RegCheckIngestQueue.Arn
+                  - !GetAtt DecisionQueue.Arn
+              # SNS publish
+              - Effect: Allow
+                Action: "sns:Publish"
+                Resource: !Ref NotifyTopic
+              # Textract & Rekognition
+              - Effect: Allow
+                Action:
+                  - textract:StartDocumentTextDetection
+                  - textract:GetDocumentTextDetection
+                  - rekognition:CompareFaces
+                  - rekognition:DetectFaces
+                  - rekognition:DetectFaceLiveness
+                Resource: "*"
+              # RDS Data API or direct TCP — grant secretless connect (simplified)
+              - Effect: Allow
+                Action: "rds-db:connect"
+                Resource: "*"
+
+  ## ────────── Lambda Functions ──────────
+  DocScanFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: doc_scan_lambda
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          # TODO: replace with real code or S3 location
+          def handler(event, context):
+              print("doc_scan placeholder", event)
+      Timeout: 30
+      Environment:
+        Variables:
+          FACE_QUEUE_URL: !Ref FaceMatchQueue
+          REG_REQ_QUEUE_URL: !Ref RegRequestQueue
+          DB_HOST: !GetAtt KycDbInstance.Endpoint.Address
+          DB_USER: !Ref DbUsername
+          DB_PASSWORD: !Ref DbPassword
+          DB_NAME: kyc
+
+  FaceMatchFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: face_match_lambda
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              print("face_match placeholder", event)
+      Timeout: 30
+      Environment:
+        Variables:
+          DECISION_QUEUE_URL: !Ref DecisionQueue
+          DB_HOST: !GetAtt KycDbInstance.Endpoint.Address
+          DB_USER: !Ref DbUsername
+          DB_PASSWORD: !Ref DbPassword
+
+  RegRequestFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: reg_request_lambda
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              print("reg_request placeholder", event)
+      Timeout: 30
+      Environment:
+        Variables:
+          REG_RESP_QUEUE_URL: !Ref RegCheckIngestQueue
+
+  RegCheckFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: reg_check_lambda
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              print("reg_check placeholder", event)
+      Timeout: 30
+      Environment:
+        Variables:
+          DECISION_QUEUE_URL: !Ref DecisionQueue
+          DB_HOST: !GetAtt KycDbInstance.Endpoint.Address
+
+  DecisionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: decision_lambda
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              print("decision placeholder", event)
+      Timeout: 30
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref NotifyTopic
+          DB_HOST: !GetAtt KycDbInstance.Endpoint.Address
+
+  ExpiryReminderFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: expiry_reminder_lambda
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          def handler(event, context):
+              print("expiry_reminder placeholder", event)
+      Timeout: 60
+      Environment:
+        Variables:
+          SNS_TOPIC_ARN: !Ref NotifyTopic
+          DB_HOST: !GetAtt KycDbInstance.Endpoint.Address
+
+  ## ────────── Event Source Mappings ──────────
+  FaceMatchESM:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt FaceMatchQueue.Arn
+      FunctionName: !Ref FaceMatchFunction
+      BatchSize: 10
+      Enabled: true
+
+  RegRequestESM:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt RegRequestQueue.Arn
+      FunctionName: !Ref RegRequestFunction
+      BatchSize: 10
+      Enabled: true
+
+  RegCheckESM:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt RegCheckIngestQueue.Arn
+      FunctionName: !Ref RegCheckFunction
+      BatchSize: 10
+      Enabled: true
+
+  DecisionESM:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt DecisionQueue.Arn
+      FunctionName: !Ref DecisionFunction
+      BatchSize: 10
+      Enabled: true
+
+  ## ────────── S3 → Lambda permission ──────────
+  LambdaPermissionForS3:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DocScanFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt KycRawBucket.Arn
+
+  ## ────────── Scheduler (weekly expiry check) ──────────
+  ExpirySchedulerRule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: "cron(0 2 ? * MON *)"  # every Monday at 02:00 UTC
+      Targets:
+        - Arn: !GetAtt ExpiryReminderFunction.Arn
+          Id: ExpiryReminderLambda
+
+  LambdaPermissionForEventBridge:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ExpiryReminderFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ExpirySchedulerRule.Arn
+
+Outputs:
+  BucketName:
+    Description: Raw upload bucket
+    Value: !Ref KycRawBucket
+
+  PostgresEndpoint:
+    Description: JDBC endpoint for the RDS instance
+    Value: !GetAtt KycDbInstance.Endpoint.Address
+
+  NotifyTopicArn:
+    Description: SNS topic used for pass/fail and expiry notifications
+    Value: !Ref NotifyTopic
+
+  FaceMatchQueueUrl:
+    Value: !Ref FaceMatchQueue
+  RegRequestQueueUrl:
+    Value: !Ref RegRequestQueue
+  RegCheckIngestQueueUrl:
+    Value: !Ref RegCheckIngestQueue
+  DecisionQueueUrl:
+    Value: !Ref DecisionQueue
