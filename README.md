@@ -141,7 +141,7 @@ graph TD
 ## 2  Detailed Flow Diagram
 
 ```mermaid
-%%  KYC flow – full round-trip AI calls + clarified SNS name
+%%  KYC flow – full round-trip AI calls (aligned with id_documents.expiry_date)
 graph TD
     %% ─────────── Sources & Triggers ───────────
     USER_UPLOAD[User uploads<br/>ID + selfie]
@@ -191,24 +191,23 @@ graph TD
     S3 -- ObjectCreated --> DOC
 
     %% ───── 1  doc_scan_lambda
-    DOC -- "INSERT doc_scans"  --> SCANS
-    DOC -- "INSERT selfies"    --> SELFIES
-    DOC -- "UPDATE id_documents" --> IDDOC
-    DOC -- "msg: user_id"               --> Q_FACE
-    DOC -- "msg: reg_type + reg_no"     --> Q_REQ
+    DOC -- "INSERT doc_scans" --> SCANS
+    DOC -- "INSERT selfies"   --> SELFIES
+    DOC -- "UPDATE id_documents<br/>(expiry_date, status)" --> IDDOC
+    DOC -- "msg: user_id"              --> Q_FACE
+    DOC -- "msg: reg_type + reg_no"    --> Q_REQ
 
     %% ───── AI service calls (outbound & return)
     DOC -. "OCR" .-> Textract
     Textract -. "JSON result" .-> DOC
 
     FACE -. "Compare & liveness" .-> Rekog
-    Rekog -. "JSON result" .-> FACE
+    Rekog -. "JSON result"       .-> FACE
 
     %% ───── 2  face_match_lambda
     Q_FACE --> FACE
     FACE -- "INSERT face_checks" --> FACES
-    %% (fan-in) FACE → decision queue
-    FACE -->|msg: user_id| Q_DEC
+    FACE -->|msg: user_id| Q_DEC  
 
     %% ───── 3  Apify request / response
     Q_REQ --> REQ
@@ -218,8 +217,7 @@ graph TD
     %% ───── 3a  reg_check_lambda
     Q_RESP --> REG
     REG -- "INSERT reg_checks" --> REGCHK
-    %% (fan-in) REG → decision queue (label offset for clarity)
-    REG -. "msg: user_id" .-> Q_DEC
+    REG -. "msg: user_id" .-> Q_DEC  
 
     %% ───── 4  decision_lambda
     Q_DEC --> DEC
@@ -233,7 +231,7 @@ graph TD
 
     %% ───── 6  Expiry reminder
     CRON --> REM
-    REM -- "SELECT expiry then send<br/>90/30/7-day emails" --> NOTIFY_SNS
+    REM -- "SELECT id_documents.expiry_date<br/>then send 90/30/7-day emails" --> NOTIFY_SNS
 
     %% ─────────── Styling ───────────
     classDef lambda fill:#004b76,stroke:#fff,color:#fff;
